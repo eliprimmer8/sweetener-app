@@ -21,7 +21,7 @@ const ForgotPasswordPage: React.FC<ForgotPasswordPageProps> = ({ onNavigateToLog
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-100 dark:from-gray-800 dark:via-gray-900 dark:to-black">
+    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-pink-200 via-rose-200 to-fuchsia-200 dark:from-pink-900 dark:via-rose-900 dark:to-fuchsia-950">
       <div className="w-full max-w-md p-8 space-y-8 bg-white rounded-2xl shadow-2xl dark:bg-gray-800/90 backdrop-blur-sm m-4">
         <div className="text-center">
             <div className="flex items-center justify-center mb-4">
