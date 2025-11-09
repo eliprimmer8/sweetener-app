@@ -28,23 +28,33 @@ const SignUpPage: React.FC<SignUpPageProps> = ({ onNavigateToLogin }) => {
       setUsernameStatus(null);
       return;
     }
+
     const handler = setTimeout(async () => {
-      if (isUsernameReserved(username)) {
-        setUsernameStatus({ message: 'Username not available.', color: 'text-red-500' });
-      } else {
-        const isAvailable = await checkUsernameAvailable(username);
-        if (isAvailable) {
-          setUsernameStatus({ message: 'Username is available!', color: 'text-green-500' });
-        } else {
-          setUsernameStatus({ message: 'Username not available.', color: 'text-red-500' });
+        if (username.startsWith('_') || username.endsWith('_')) {
+            setUsernameStatus({ message: 'Cannot start or end with an underscore.', color: 'text-red-500' });
+            return;
         }
-      }
+        if (username.includes('__')) {
+            setUsernameStatus({ message: 'Cannot have consecutive underscores.', color: 'text-red-500' });
+            return;
+        }
+
+        if (isUsernameReserved(username)) {
+            setUsernameStatus({ message: 'This username is reserved.', color: 'text-red-500' });
+        } else {
+            const isAvailable = await checkUsernameAvailable(username);
+            if (isAvailable) {
+                setUsernameStatus({ message: 'Username is available!', color: 'text-green-500' });
+            } else {
+                setUsernameStatus({ message: 'Username is already taken.', color: 'text-red-500' });
+            }
+        }
     }, 500);
 
     return () => {
-      clearTimeout(handler);
+        clearTimeout(handler);
     };
-  }, [username, checkUsernameAvailable]);
+}, [username, checkUsernameAvailable]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -55,7 +65,7 @@ const SignUpPage: React.FC<SignUpPageProps> = ({ onNavigateToLogin }) => {
       return;
     }
     if (usernameStatus?.color === 'text-red-500') {
-      setError('Please choose an available username.');
+      setError('Please choose a valid username.');
       return;
     }
     if (password.length < 8) {

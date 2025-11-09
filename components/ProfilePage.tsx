@@ -16,7 +16,8 @@ const ProfilePage: React.FC = () => {
   const [username, setUsername] = useState(currentUser?.username || '');
   const [profilePhoto, setProfilePhoto] = useState(currentUser?.profilePhoto || '');
   const [error, setError] = useState('');
-  
+  const [usernameStatus, setUsernameStatus] = useState<{ message: string; color: string; } | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -35,6 +36,40 @@ const ProfilePage: React.FC = () => {
     };
     fetchPosts();
   }, [currentUser, loading]); // Rerun if currentUser changes or after an update (signalled by `loading` becoming false)
+
+  useEffect(() => {
+    if (!isEditing || !currentUser || username === currentUser.username) {
+        setUsernameStatus(null);
+        return;
+    }
+    const handler = setTimeout(async () => {
+        if (username.length < 3 || username.length > 20) {
+            setUsernameStatus({ message: 'Username must be 3-20 characters.', color: 'text-red-500' });
+            return;
+        }
+        if (username.startsWith('_') || username.endsWith('_')) {
+            setUsernameStatus({ message: 'Cannot start or end with an underscore.', color: 'text-red-500' });
+            return;
+        }
+        if (username.includes('__')) {
+            setUsernameStatus({ message: 'Cannot have consecutive underscores.', color: 'text-red-500' });
+            return;
+        }
+        if (isUsernameReserved(username)) {
+            setUsernameStatus({ message: 'This username is reserved.', color: 'text-red-500' });
+            return;
+        }
+
+        const isAvailable = await checkUsernameAvailable(username);
+        if (isAvailable) {
+            setUsernameStatus({ message: 'Username is available!', color: 'text-green-500' });
+        } else {
+            setUsernameStatus({ message: 'Username is not available.', color: 'text-red-500' });
+        }
+    }, 500);
+
+    return () => clearTimeout(handler);
+  }, [username, currentUser, checkUsernameAvailable, isEditing]);
 
 
   if (!currentUser) {
@@ -55,38 +90,22 @@ const ProfilePage: React.FC = () => {
   const handleSaveChanges = async () => {
     setError('');
     const trimmedFullName = fullName.trim();
-    const trimmedUsername = username.trim();
 
-    if (!trimmedFullName || !trimmedUsername) {
+    if (!trimmedFullName || !username) {
         setError('Full name and username cannot be empty.');
         return;
     }
-    if (trimmedUsername.length < 3 || trimmedUsername.length > 20) {
-        setError('Username must be between 3 and 20 characters.');
-        return;
-    }
-    if (!/^[a-z0-9_]+$/.test(trimmedUsername)) {
-        setError('Username can only contain lowercase letters, numbers, and underscores.');
-        return;
-    }
 
-    if (trimmedUsername !== currentUser.username) {
-        if(isUsernameReserved(trimmedUsername)) {
-            setError('This username is reserved.');
-            return;
-        }
-        const isAvailable = await checkUsernameAvailable(trimmedUsername);
-        if (!isAvailable) {
-            setError('This username is not available.');
-            return;
-        }
+    if (usernameStatus?.color === 'text-red-500') {
+        setError('Please fix the username error before saving.');
+        return;
     }
     
     try {
         await updateUser({
             ...currentUser,
             fullName: trimmedFullName,
-            username: trimmedUsername,
+            username: username,
             profilePhoto,
         });
         setIsEditing(false);
@@ -101,6 +120,7 @@ const ProfilePage: React.FC = () => {
     setUsername(currentUser.username);
     setProfilePhoto(currentUser.profilePhoto);
     setError('');
+    setUsernameStatus(null);
     setIsEditing(false);
   };
 
@@ -182,6 +202,7 @@ const ProfilePage: React.FC = () => {
                             className="appearance-none rounded-md relative block w-full pl-8 pr-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white"
                         />
                     </div>
+                    {usernameStatus && <p className={`text-xs mt-1 ${usernameStatus.color}`}>{usernameStatus.message}</p>}
                 </div>
             </div>
           ) : (
@@ -207,7 +228,7 @@ const ProfilePage: React.FC = () => {
             <div className="flex items-center space-x-3">
               <button
                 onClick={handleSaveChanges}
-                disabled={loading}
+                disabled={loading || usernameStatus?.color === 'text-red-500'}
                 className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-green-400 dark:focus:ring-offset-gray-900"
               >
                 {loading ? 'Saving...' : 'Save'}
