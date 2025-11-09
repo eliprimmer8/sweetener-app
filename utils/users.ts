@@ -8,6 +8,8 @@ export interface User {
   profilePhoto: string; // base64 string or URL
   following: string[];
   followers: string[];
+  isAdmin?: boolean;
+  isVerified?: boolean;
 }
 
 export interface Post {

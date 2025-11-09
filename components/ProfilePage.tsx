@@ -3,7 +3,7 @@ import { UserContext } from '../contexts/UserContext';
 import * as api from '../services/api';
 import { Post } from '../utils/users';
 import { isUsernameReserved } from '../utils/usernames';
-import { CameraIcon, EditIcon, LogoutIcon, DefaultAvatarIcon } from './Icons';
+import { CameraIcon, EditIcon, LogoutIcon, DefaultAvatarIcon, VerifiedIcon } from './Icons';
 
 const ProfilePage: React.FC = () => {
   const { currentUser, logout, updateUser, loading, checkUsernameAvailable } = useContext(UserContext);
@@ -208,7 +208,10 @@ const ProfilePage: React.FC = () => {
           ) : (
             <div className="text-center">
               <h2 className="text-3xl font-bold text-gray-900 dark:text-white">{currentUser.fullName}</h2>
-              <p className="text-md text-indigo-500 dark:text-indigo-400">@{currentUser.username}</p>
+              <div className="flex items-center justify-center">
+                <p className="text-md text-indigo-500 dark:text-indigo-400">@{currentUser.username}</p>
+                {currentUser.isVerified && <VerifiedIcon className="w-4 h-4 text-blue-500 ml-1" />}
+              </div>
               <div className="mt-4 flex justify-center space-x-6 text-gray-600 dark:text-gray-300">
                 <div>
                   <span className="font-bold text-gray-900 dark:text-white">{currentUser.following?.length || 0}</span> Following

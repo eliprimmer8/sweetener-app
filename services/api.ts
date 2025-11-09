@@ -4,11 +4,45 @@ const USERS_KEY = 'users';
 const POSTS_KEY = 'posts';
 const SIMULATED_DELAY = 600; // ms
 
+// --- Seeding ---
+const seedInitialData = () => {
+    const initialUsers: User[] = [
+        {
+            id: '1',
+            fullName: 'Ryan Admin',
+            username: 'ryan',
+            email: 'ryan@sweetener.social',
+            password: 'password123',
+            profilePhoto: '',
+            following: ['2'],
+            followers: ['2'],
+            isVerified: true
+        },
+        {
+            id: '2',
+            fullName: 'Jane Doe',
+            username: 'janedoe',
+            email: 'jane@example.com',
+            password: 'password123',
+            profilePhoto: '',
+            following: ['1'],
+            followers: ['1'],
+            isVerified: false
+        }
+    ];
+    saveUsersToStorage(initialUsers);
+};
+
+
 // --- Internal Helper Functions ---
 
 export const getUsers = (): User[] => {
   try {
     const usersJson = localStorage.getItem(USERS_KEY);
+    if (!usersJson) {
+        seedInitialData();
+        return getUsers();
+    }
     return usersJson ? JSON.parse(usersJson) : [];
   } catch (error) {
     console.error("Failed to parse users from localStorage", error);
@@ -60,7 +94,7 @@ const simulateApiCall = <T>(data: T, error?: string): Promise<T> => {
 export const apiLogin = (identifier: string, password: string): Promise<User> => {
   const users = getUsers();
   const lowerCaseIdentifier = identifier.toLowerCase();
-  const user = users.find(u => 
+  let user = users.find(u => 
       ((u.email && u.email.toLowerCase() === lowerCaseIdentifier) || 
        (u.username && u.username.toLowerCase() === lowerCaseIdentifier) ||
        u.phone === identifier) && 
@@ -68,6 +102,10 @@ export const apiLogin = (identifier: string, password: string): Promise<User> =>
   );
 
   if (user) {
+    // Add isAdmin flag at runtime for the admin user
+    if (user.username === 'ryan') {
+        user = { ...user, isAdmin: true };
+    }
     return simulateApiCall(user);
   } else {
     return simulateApiCall(user, 'Invalid credentials.');
@@ -86,9 +124,10 @@ export const apiSignup = (newUser: User): Promise<User> => {
       return simulateApiCall(newUser, 'An account with this phone number already exists.');
     }
     
-    users.push(newUser);
+    const userToSave = { ...newUser, isVerified: false };
+    users.push(userToSave);
     saveUsersToStorage(users);
-    return simulateApiCall(newUser);
+    return simulateApiCall(userToSave);
 };
 
 
@@ -97,9 +136,15 @@ export const apiUpdateUser = (updatedUser: User): Promise<User> => {
     const userIndex = users.findIndex(u => u.id === updatedUser.id);
     
     if (userIndex !== -1) {
-        users[userIndex] = updatedUser;
+        // Prevent non-admins from making themselves admin/verified
+        const existingUser = users[userIndex];
+        users[userIndex] = {
+            ...updatedUser,
+            isAdmin: existingUser.isAdmin,
+            isVerified: existingUser.isVerified,
+        };
         saveUsersToStorage(users);
-        return simulateApiCall(updatedUser);
+        return simulateApiCall(users[userIndex]);
     }
     return simulateApiCall(updatedUser, "User not found for update.");
 };
@@ -202,4 +247,49 @@ export const apiGetUsersByIds = (userIds: string[]): Promise<User[]> => {
     allUsers.forEach(user => userMap.set(user.id, user));
     const foundUsers = userIds.map(id => userMap.get(id)).filter((u): u is User => !!u);
     return simulateApiCall(foundUsers);
+};
+
+
+// --- Admin Functions ---
+
+export const apiAdminUpdateUser = (adminId: string, targetUserId: string, updates: Partial<User>): Promise<User> => {
+    const users = getUsers();
+    const adminUser = users.find(u => u.id === adminId);
+
+    if (!adminUser || adminUser.username !== 'ryan') {
+        return simulateApiCall(null, "Unauthorized: Only admins can perform this action.");
+    }
+    
+    const targetUserIndex = users.findIndex(u => u.id === targetUserId);
+
+    if (targetUserIndex !== -1) {
+        users[targetUserIndex] = { ...users[targetUserIndex], ...updates };
+        saveUsersToStorage(users);
+        return simulateApiCall(users[targetUserIndex]);
+    }
+    return simulateApiCall(null, "Target user not found.");
+};
+
+
+export const apiAdminDeleteUser = (adminId: string, targetUserId: string): Promise<void> => {
+    const users = getUsers();
+    const adminUser = users.find(u => u.id === adminId);
+
+    if (!adminUser || adminUser.username !== 'ryan') {
+        return simulateApiCall(undefined, "Unauthorized: Only admins can perform this action.");
+    }
+
+    const updatedUsers = users.filter(u => u.id !== targetUserId);
+
+    if (users.length === updatedUsers.length) {
+         return simulateApiCall(undefined, "Target user not found.");
+    }
+
+    // Also delete user's posts
+    const posts = getPosts();
+    const updatedPosts = posts.filter(p => p.userId !== targetUserId);
+    savePostsToStorage(updatedPosts);
+    
+    saveUsersToStorage(updatedUsers);
+    return simulateApiCall(undefined);
 };

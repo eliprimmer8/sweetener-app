@@ -2,7 +2,8 @@ import React, { useContext, useState, useEffect } from 'react';
 import { UserContext } from '../contexts/UserContext';
 import * as api from '../services/api';
 import { User, Post } from '../utils/users';
-import { DefaultAvatarIcon, BackIcon } from './Icons';
+import { DefaultAvatarIcon, BackIcon, VerifiedIcon } from './Icons';
+import AdminPanel from './AdminPanel';
 
 interface UserProfilePageProps {
   user: User;
@@ -14,11 +15,14 @@ const UserProfilePage: React.FC<UserProfilePageProps> = ({ user, onBack }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [posts, setPosts] = useState<Post[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(true);
+  const [profileUser, setProfileUser] = useState<User>(user);
 
-  const isFollowing = currentUser?.following?.includes(user.id) ?? false;
-  const isCurrentUser = currentUser?.id === user.id;
+
+  const isFollowing = currentUser?.following?.includes(profileUser.id) ?? false;
+  const isCurrentUser = currentUser?.id === profileUser.id;
 
   useEffect(() => {
+    setProfileUser(user);
     const fetchPosts = async () => {
       setLoadingPosts(true);
       try {
@@ -31,15 +35,15 @@ const UserProfilePage: React.FC<UserProfilePageProps> = ({ user, onBack }) => {
       }
     };
     fetchPosts();
-  }, [user.id]);
+  }, [user]);
 
   const handleFollowToggle = async () => {
     setIsLoading(true);
     try {
         if (isFollowing) {
-          await unfollowUser(user.id);
+          await unfollowUser(profileUser.id);
         } else {
-          await followUser(user.id);
+          await followUser(profileUser.id);
         }
     } catch (error) {
         console.error("Failed to toggle follow state", error);
@@ -49,9 +53,9 @@ const UserProfilePage: React.FC<UserProfilePageProps> = ({ user, onBack }) => {
   };
 
   const renderProfileImage = () => {
-    if (user.profilePhoto) {
+    if (profileUser.profilePhoto) {
       return <img
-        src={user.profilePhoto}
+        src={profileUser.profilePhoto}
         alt="Profile"
         className="rounded-full w-full h-full object-cover border-4 border-indigo-200 dark:border-indigo-700"
       />
@@ -97,14 +101,17 @@ const UserProfilePage: React.FC<UserProfilePageProps> = ({ user, onBack }) => {
             </div>
             
             <div className="text-center">
-                <h2 className="text-3xl font-bold text-gray-900 dark:text-white">{user.fullName}</h2>
-                <p className="text-md text-indigo-500 dark:text-indigo-400">@{user.username}</p>
+                <h2 className="text-3xl font-bold text-gray-900 dark:text-white">{profileUser.fullName}</h2>
+                 <div className="flex items-center justify-center">
+                    <p className="text-md text-indigo-500 dark:text-indigo-400">@{profileUser.username}</p>
+                    {profileUser.isVerified && <VerifiedIcon className="w-4 h-4 text-blue-500 ml-1" />}
+                </div>
                 <div className="mt-4 flex justify-center space-x-6 text-gray-600 dark:text-gray-300">
                 <div>
-                    <span className="font-bold text-gray-900 dark:text-white">{user.following?.length || 0}</span> Following
+                    <span className="font-bold text-gray-900 dark:text-white">{profileUser.following?.length || 0}</span> Following
                 </div>
                 <div>
-                    <span className="font-bold text-gray-900 dark:text-white">{user.followers?.length || 0}</span> Followers
+                    <span className="font-bold text-gray-900 dark:text-white">{profileUser.followers?.length || 0}</span> Followers
                 </div>
                 </div>
             </div>
@@ -124,6 +131,14 @@ const UserProfilePage: React.FC<UserProfilePageProps> = ({ user, onBack }) => {
                         {isLoading ? '...' : (isFollowing ? 'Unfollow' : 'Follow')}
                     </button>
                 </div>
+            )}
+            
+            {currentUser?.isAdmin && !isCurrentUser && (
+                <AdminPanel 
+                    targetUser={profileUser}
+                    onUserUpdate={setProfileUser}
+                    onUserDelete={onBack}
+                />
             )}
         </div>
         <div className="border-t border-gray-200 dark:border-gray-700 mt-4 pt-4">

@@ -15,6 +15,8 @@ interface UserContextType {
   unfollowUser: (userIdToUnfollow: string) => Promise<void>;
   checkUsernameAvailable: (username: string) => Promise<boolean>;
   createPost: (imageUrl: string, caption: string) => Promise<void>;
+  adminUpdateUser: (targetUserId: string, updates: Partial<User>) => Promise<User>;
+  adminDeleteUser: (targetUserId: string) => Promise<void>;
 }
 
 export const UserContext = createContext<UserContextType>({
@@ -29,6 +31,8 @@ export const UserContext = createContext<UserContextType>({
   unfollowUser: async () => {},
   checkUsernameAvailable: async () => true,
   createPost: async () => {},
+  adminUpdateUser: async () => ({} as User),
+  adminDeleteUser: async () => {},
 });
 
 interface UserProviderProps {
@@ -75,7 +79,14 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
 
   useEffect(() => {
     if (currentUser) {
-      localStorage.setItem('currentUser', JSON.stringify(currentUser));
+      // Add admin flag at runtime if it's our admin user
+      const userToStore = {...currentUser};
+      if (userToStore.username === 'ryan') {
+          userToStore.isAdmin = true;
+      } else {
+          delete userToStore.isAdmin;
+      }
+      localStorage.setItem('currentUser', JSON.stringify(userToStore));
     } else {
       localStorage.removeItem('currentUser');
     }
@@ -161,8 +172,30 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
     }
   }
 
+  const adminUpdateUser = async (targetUserId: string, updates: Partial<User>) => {
+      if (!currentUser?.isAdmin) throw new Error("Unauthorized");
+      setLoading(true);
+      try {
+        const updatedUser = await api.apiAdminUpdateUser(currentUser.id, targetUserId, updates);
+        return updatedUser;
+      } finally {
+        setLoading(false);
+      }
+  };
+  
+  const adminDeleteUser = async (targetUserId: string) => {
+    if (!currentUser?.isAdmin) throw new Error("Unauthorized");
+    setLoading(true);
+    try {
+      await api.apiAdminDeleteUser(currentUser.id, targetUserId);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
   return (
-    <UserContext.Provider value={{ currentUser, loading, login, logout, signup, updateUser, requestPasswordReset, followUser, unfollowUser, checkUsernameAvailable, createPost }}>
+    <UserContext.Provider value={{ currentUser, loading, login, logout, signup, updateUser, requestPasswordReset, followUser, unfollowUser, checkUsernameAvailable, createPost, adminUpdateUser, adminDeleteUser }}>
       {children}
     </UserContext.Provider>
   );

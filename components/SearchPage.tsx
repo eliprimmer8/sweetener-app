@@ -3,7 +3,7 @@ import { UserContext } from '../contexts/UserContext';
 // Fix: Import User from utils/users and getUsers from services/api
 import { User } from '../utils/users';
 import { getUsers } from '../services/api';
-import { DefaultAvatarIcon, SearchIcon } from './Icons';
+import { DefaultAvatarIcon, SearchIcon, VerifiedIcon } from './Icons';
 
 interface SearchPageProps {
   onViewProfile: (user: User) => void;
@@ -72,7 +72,10 @@ const SearchPage: React.FC<SearchPageProps> = ({ onViewProfile }) => {
             )}
             <div className="flex-grow">
               <p className="font-bold text-gray-800 dark:text-white">{user.fullName}</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">@{user.username}</p>
+              <div className="flex items-center">
+                <p className="text-sm text-gray-500 dark:text-gray-400">@{user.username}</p>
+                {user.isVerified && <VerifiedIcon className="w-3 h-3 text-blue-500 ml-1" />}
+              </div>
             </div>
           </div>
           <button

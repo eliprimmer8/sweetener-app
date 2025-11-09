@@ -1,6 +1,6 @@
 import React from 'react';
 import { Post, User } from '../utils/users';
-import { DefaultAvatarIcon } from './Icons';
+import { DefaultAvatarIcon, VerifiedIcon } from './Icons';
 
 interface PostCardProps {
     post: Post;
@@ -41,8 +41,9 @@ const PostCard: React.FC<PostCardProps> = ({ post, author }) => {
                         <DefaultAvatarIcon className="w-6 h-6 text-gray-400 dark:text-gray-500" />
                     </div>
                 )}
-                <div>
+                <div className="flex items-center">
                     <p className="font-bold text-sm text-gray-800 dark:text-white">{author.username}</p>
+                    {author.isVerified && <VerifiedIcon className="w-3 h-3 text-blue-500 ml-1" />}
                 </div>
             </div>
 
