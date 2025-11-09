@@ -1,7 +1,7 @@
 import { User, Post } from '../utils/users';
 
-const USERS_KEY = 'users';
-const POSTS_KEY = 'posts';
+const USERS_KEY = 'users_v2';
+const POSTS_KEY = 'posts_v2';
 const SIMULATED_DELAY = 600; // ms
 
 // --- Seeding ---
@@ -14,20 +14,9 @@ const seedInitialData = () => {
             email: 'ryan@sweetener.social',
             password: 'password123',
             profilePhoto: '',
-            following: ['2'],
-            followers: ['2'],
+            following: [],
+            followers: [],
             isVerified: true
-        },
-        {
-            id: '2',
-            fullName: 'Jane Doe',
-            username: 'janedoe',
-            email: 'jane@example.com',
-            password: 'password123',
-            profilePhoto: '',
-            following: ['1'],
-            followers: ['1'],
-            isVerified: false
         }
     ];
     saveUsersToStorage(initialUsers);

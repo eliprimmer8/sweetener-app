@@ -104,6 +104,10 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
 
   const logout = () => {
     setCurrentUser(null);
+    // Clear layout state on logout
+    localStorage.removeItem('activeTab');
+    localStorage.removeItem('viewingUserId');
+    localStorage.removeItem('isCreatingPost');
   };
 
   const signup = async (newUser: User): Promise<void> => {
