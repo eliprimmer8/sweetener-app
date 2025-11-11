@@ -1,9 +1,9 @@
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useState, useContext, useEffect, useCallback } from 'react';
 import { UserContext } from '../contexts/UserContext';
-// Fix: Import User from utils/users and getUsers from services/api
 import { User } from '../utils/users';
-import { getUsers } from '../services/api';
+import { apiSearchUsers } from '../services/api';
 import { DefaultAvatarIcon, SearchIcon, VerifiedIcon } from './Icons';
+import { debounce } from 'lodash';
 
 interface SearchPageProps {
   onViewProfile: (user: User) => void;
@@ -12,41 +12,51 @@ interface SearchPageProps {
 const SearchPage: React.FC<SearchPageProps> = ({ onViewProfile }) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<User[]>([]);
+  const [loadingSearch, setLoadingSearch] = useState(false);
   const { currentUser, followUser, unfollowUser } = useContext(UserContext);
   const [togglingFollow, setTogglingFollow] = useState<string | null>(null);
 
-  useEffect(() => {
-    const trimmedQuery = query.trim();
-
-    if (!trimmedQuery) {
-      setResults([]);
-      return;
-    }
-
-    const allUsers = getUsers();
-    const filteredUsers = allUsers.filter(user => {
-      const lowerCaseQuery = trimmedQuery.toLowerCase();
-      // Exclude current user from search results
-      if (user.id === currentUser?.id) {
-        return false;
+  const debouncedSearch = useCallback(
+    debounce(async (searchQuery: string) => {
+      if (!searchQuery.trim()) {
+        setResults([]);
+        setLoadingSearch(false);
+        return;
       }
-      return (
-        user.username.toLowerCase().includes(lowerCaseQuery) ||
-        user.fullName.toLowerCase().includes(lowerCaseQuery)
-      );
-    });
+      setLoadingSearch(true);
+      try {
+        const users = await apiSearchUsers(searchQuery, currentUser?.id || '');
+        setResults(users);
+      } catch (error) {
+        console.error("Failed to search users:", error);
+      } finally {
+        setLoadingSearch(false);
+      }
+    }, 300),
+    [currentUser?.id]
+  );
 
-    setResults(filteredUsers);
-  }, [query, currentUser?.id, currentUser?.following]);
+  useEffect(() => {
+    debouncedSearch(query);
+    return () => {
+      debouncedSearch.cancel();
+    };
+  }, [query, debouncedSearch]);
 
 
   const handleFollowToggle = async (userId: string, isFollowing: boolean) => {
     setTogglingFollow(userId);
     try {
+        let updatedTargetUser: User | void;
         if (isFollowing) {
-          await unfollowUser(userId);
+          updatedTargetUser = await unfollowUser(userId);
         } else {
-          await followUser(userId);
+          updatedTargetUser = await followUser(userId);
+        }
+        if (updatedTargetUser) {
+            setResults(prevResults => 
+                prevResults.map(u => u.id === userId ? (updatedTargetUser as User) : u)
+            );
         }
     } catch (error) {
         console.error('Failed to toggle follow state', error);
@@ -110,15 +120,16 @@ const SearchPage: React.FC<SearchPageProps> = ({ onViewProfile }) => {
       </div>
 
       <div>
-        {query.trim() === '' && (
+        {loadingSearch && <p className="text-center text-gray-500 dark:text-gray-400">Searching...</p>}
+        {!loadingSearch && query.trim() === '' && (
            <p className="text-center text-gray-500 dark:text-gray-400">Discover new content and users.</p>
         )}
-        {query.trim() !== '' && results.length > 0 && (
+        {!loadingSearch && query.trim() !== '' && results.length > 0 && (
           <div className="space-y-2">
             {results.map(renderUser)}
           </div>
         )}
-        {query.trim() !== '' && results.length === 0 && (
+        {!loadingSearch && query.trim() !== '' && results.length === 0 && (
           <p className="text-center text-gray-500 dark:text-gray-400">No users found.</p>
         )}
       </div>

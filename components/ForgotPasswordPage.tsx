@@ -1,22 +1,22 @@
 import React, { useState, useContext } from 'react';
 import { UserContext } from '../contexts/UserContext';
-import { BrandIcon, UserIcon } from './Icons';
+import { BrandIcon, EmailIcon } from './Icons';
 
 interface ForgotPasswordPageProps {
   onNavigateToLogin: () => void;
 }
 
 const ForgotPasswordPage: React.FC<ForgotPasswordPageProps> = ({ onNavigateToLogin }) => {
-  const [identifier, setIdentifier] = useState('');
+  const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const { requestPasswordReset, loading } = useContext(UserContext);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!identifier) {
+    if (!email) {
         return;
     }
-    await requestPasswordReset(identifier);
+    await requestPasswordReset(email);
     setSubmitted(true);
   };
 
@@ -30,8 +30,8 @@ const ForgotPasswordPage: React.FC<ForgotPasswordPageProps> = ({ onNavigateToLog
             </div>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
             {submitted 
-             ? "If an account with that identifier exists, we've sent a password reset link."
-             : "Enter your account's email, phone, or username to receive a password reset link."}
+             ? "If an account with that email exists, we've sent a password reset link."
+             : "Enter your account's email to receive a password reset link."}
           </p>
         </div>
         
@@ -39,19 +39,19 @@ const ForgotPasswordPage: React.FC<ForgotPasswordPageProps> = ({ onNavigateToLog
             <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <UserIcon className="h-5 w-5 text-gray-400" />
+                  <EmailIcon className="h-5 w-5 text-gray-400" />
                 </div>
                 <input
                   id="identifier-reset"
                   name="identifier"
-                  type="text"
-                  autoComplete="username"
+                  type="email"
+                  autoComplete="email"
                   required
                   className="appearance-none rounded-md relative block w-full px-10 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white"
-                  placeholder="Email, phone, or username"
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  aria-label="Email, phone, or username"
+                  placeholder="Email address"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  aria-label="Email address"
                 />
               </div>
               <div>

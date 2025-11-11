@@ -1,27 +1,35 @@
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
 import { User, Post } from '../utils/users';
-import { isUsernameReserved } from '../utils/usernames';
 import * as api from '../services/api';
+import { supabase } from '../services/api';
+
+interface SignUpData {
+    fullName: string;
+    username: string;
+    email: string;
+    phone?: string;
+    password: string;
+}
 
 interface UserContextType {
   currentUser: User | null;
   loading: boolean;
-  login: (identifier: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => void;
-  signup: (user: User) => Promise<void>;
-  updateUser: (user: User) => Promise<void>;
+  signup: (data: SignUpData) => Promise<void>;
+  updateUser: (updates: Partial<User>, photoFile: File | null) => Promise<void>;
   requestPasswordReset: (identifier: string) => Promise<void>;
-  followUser: (userIdToFollow: string) => Promise<void>;
-  unfollowUser: (userIdToUnfollow: string) => Promise<void>;
+  followUser: (userIdToFollow: string) => Promise<User | void>;
+  unfollowUser: (userIdToUnfollow: string) => Promise<User | void>;
   checkUsernameAvailable: (username: string) => Promise<boolean>;
-  createPost: (imageUrl: string, caption: string) => Promise<void>;
+  createPost: (imageFile: File, caption: string) => Promise<void>;
   adminUpdateUser: (targetUserId: string, updates: Partial<User>) => Promise<User>;
   adminDeleteUser: (targetUserId: string) => Promise<void>;
 }
 
 export const UserContext = createContext<UserContextType>({
   currentUser: null,
-  loading: false,
+  loading: true,
   login: async () => {},
   logout: () => {},
   signup: async () => {},
@@ -40,137 +48,118 @@ interface UserProviderProps {
 }
 
 export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    try {
-      const item = window.localStorage.getItem('currentUser');
-      return item ? JSON.parse(item) : null;
-    } catch (error) {
-      console.log('Error parsing currentUser from localStorage', error);
-      return null;
-    }
-  });
-  const [loading, setLoading] = useState(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // This effect runs once on initial load to handle retroactive username reservation.
-    const userFromStorageJson = localStorage.getItem('currentUser');
-    if (userFromStorageJson) {
-      const userFromStorage = JSON.parse(userFromStorageJson);
-      if (userFromStorage && isUsernameReserved(userFromStorage.username)) {
-        // This part of logic is client-side, but it's okay as it's a one-time fixup.
-        // For a real backend, this migration would happen server-side.
-        const allUsersJSON = localStorage.getItem('users');
-        if(allUsersJSON) {
-            const allUsers = JSON.parse(allUsersJSON);
-            const userIndex = allUsers.findIndex((u:User) => u.id === userFromStorage.id);
-            if (userIndex !== -1) {
-                const newUsername = `user_${userFromStorage.id}`;
-                const updatedUser = { ...userFromStorage, username: newUsername };
-                allUsers[userIndex] = updatedUser;
-                localStorage.setItem('users', JSON.stringify(allUsers));
-                localStorage.setItem('currentUser', JSON.stringify(updatedUser));
-                setCurrentUser(updatedUser);
-            }
+    setLoading(true);
+    const getSession = async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+            const profile = await api.apiGetUserProfile(session.user.id);
+            setCurrentUser(profile);
         }
-      }
-    }
-  }, []);
+        setLoading(false);
+    };
+    getSession();
 
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+        if (session?.user) {
+            const profile = await api.apiGetUserProfile(session.user.id);
+            setCurrentUser(profile);
+        } else {
+            setCurrentUser(null);
+        }
+    });
 
-  useEffect(() => {
-    if (currentUser) {
-      // Add admin flag at runtime if it's our admin user
-      const userToStore = {...currentUser};
-      if (userToStore.username === 'ryan') {
-          userToStore.isAdmin = true;
-      } else {
-          delete userToStore.isAdmin;
-      }
-      localStorage.setItem('currentUser', JSON.stringify(userToStore));
-    } else {
-      localStorage.removeItem('currentUser');
-    }
-  }, [currentUser]);
+    return () => {
+        authListener.subscription.unsubscribe();
+    };
+}, []);
 
-  const login = async (identifier: string, password: string): Promise<void> => {
+  const login = async (email: string, password: string): Promise<void> => {
     setLoading(true);
     try {
-      const user = await api.apiLogin(identifier, password);
-      setCurrentUser(user);
+      await api.apiLogin(email, password);
+      // Auth listener will handle setting the user
     } finally {
       setLoading(false);
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await api.apiLogout();
     setCurrentUser(null);
-    // Clear layout state on logout
     localStorage.removeItem('activeTab');
     localStorage.removeItem('viewingUserId');
     localStorage.removeItem('isCreatingPost');
   };
 
-  const signup = async (newUser: User): Promise<void> => {
+  const signup = async (data: SignUpData): Promise<void> => {
     setLoading(true);
     try {
-      const signedUpUser = await api.apiSignup(newUser);
-      setCurrentUser(signedUpUser);
+      await api.apiSignup(data);
+      // Auth listener will handle setting the user
     } finally {
       setLoading(false);
     }
   };
   
-  const updateUser = async (updatedUser: User) => {
-    if (!currentUser || currentUser.id !== updatedUser.id) return;
+  const updateUser = async (updates: Partial<User>, photoFile: File | null) => {
+    if (!currentUser) return;
     
     setLoading(true);
     try {
-        const user = await api.apiUpdateUser(updatedUser);
-        setCurrentUser(user);
+        const updatedUser = await api.apiUpdateUser(currentUser.id, updates, photoFile);
+        setCurrentUser(updatedUser);
     } finally {
         setLoading(false);
     }
   };
 
   const checkUsernameAvailable = async (username: string): Promise<boolean> => {
-    const { isAvailable } = await api.apiIsUsernameAvailable(username);
+    const isAvailable = await api.apiIsUsernameAvailable(username);
     return isAvailable;
   };
 
-  const requestPasswordReset = async (identifier: string) => {
+  const requestPasswordReset = async (email: string) => {
     setLoading(true);
-    // In a real app, this would call an API. We'll just simulate it.
-    await new Promise(resolve => setTimeout(resolve, 750));
-    console.log(`Password reset requested for: ${identifier}.`);
-    setLoading(false);
-  };
-
-  const followUser = async (userIdToFollow: string) => {
-    if (!currentUser || currentUser.id === userIdToFollow) return;
     try {
-      const { updatedCurrentUser } = await api.apiFollowUser(currentUser.id, userIdToFollow);
-      setCurrentUser(updatedCurrentUser);
-    } catch (error) {
-        console.error("Failed to follow user", error);
-        // Optionally bubble up error to show in UI
+        await api.apiRequestPasswordReset(email);
+    } finally {
+        setLoading(false);
     }
   };
 
-  const unfollowUser = async (userIdToUnfollow: string) => {
+  const followUser = async (userIdToFollow: string): Promise<User | void> => {
+    if (!currentUser || currentUser.id === userIdToFollow) return;
+    try {
+      const { updatedCurrentUser, updatedTargetUser } = await api.apiFollowUser(currentUser.id, userIdToFollow);
+      setCurrentUser(updatedCurrentUser);
+      return updatedTargetUser;
+    } catch (error) {
+        console.error("Failed to follow user", error);
+        throw error;
+    }
+  };
+
+  const unfollowUser = async (userIdToUnfollow: string): Promise<User | void> => {
     if (!currentUser) return;
     try {
-      const { updatedCurrentUser } = await api.apiUnfollowUser(currentUser.id, userIdToUnfollow);
+      const { updatedCurrentUser, updatedTargetUser } = await api.apiUnfollowUser(currentUser.id, userIdToUnfollow);
       setCurrentUser(updatedCurrentUser);
+      return updatedTargetUser;
     } catch (error) {
         console.error("Failed to unfollow user", error);
+        throw error;
     }
   };
   
-  const createPost = async (imageUrl: string, caption: string) => {
+  const createPost = async (imageFile: File, caption: string) => {
     if (!currentUser) throw new Error("User must be logged in to post.");
     setLoading(true);
     try {
-        await api.apiCreatePost({ userId: currentUser.id, imageUrl, caption });
+        await api.apiCreatePost(currentUser.id, imageFile, caption);
     } finally {
         setLoading(false);
     }
@@ -180,7 +169,7 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
       if (!currentUser?.isAdmin) throw new Error("Unauthorized");
       setLoading(true);
       try {
-        const updatedUser = await api.apiAdminUpdateUser(currentUser.id, targetUserId, updates);
+        const updatedUser = await api.apiAdminUpdateUser(targetUserId, updates);
         return updatedUser;
       } finally {
         setLoading(false);
@@ -191,12 +180,11 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
     if (!currentUser?.isAdmin) throw new Error("Unauthorized");
     setLoading(true);
     try {
-      await api.apiAdminDeleteUser(currentUser.id, targetUserId);
+      await api.apiAdminDeleteUser(targetUserId);
     } finally {
       setLoading(false);
     }
   };
-
 
   return (
     <UserContext.Provider value={{ currentUser, loading, login, logout, signup, updateUser, requestPasswordReset, followUser, unfollowUser, checkUsernameAvailable, createPost, adminUpdateUser, adminDeleteUser }}>

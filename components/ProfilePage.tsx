@@ -14,7 +14,9 @@ const ProfilePage: React.FC = () => {
   // State for form fields
   const [fullName, setFullName] = useState(currentUser?.fullName || '');
   const [username, setUsername] = useState(currentUser?.username || '');
-  const [profilePhoto, setProfilePhoto] = useState(currentUser?.profilePhoto || '');
+  const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null);
+  const [profilePhotoPreview, setProfilePhotoPreview] = useState(currentUser?.profilePhoto || '');
+
   const [error, setError] = useState('');
   const [usernameStatus, setUsernameStatus] = useState<{ message: string; color: string; } | null>(null);
 
@@ -35,7 +37,15 @@ const ProfilePage: React.FC = () => {
       }
     };
     fetchPosts();
-  }, [currentUser, loading]); // Rerun if currentUser changes or after an update (signalled by `loading` becoming false)
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    setFullName(currentUser.fullName);
+    setUsername(currentUser.username);
+    setProfilePhotoPreview(currentUser.profilePhoto);
+  }, [currentUser, isEditing]);
+
 
   useEffect(() => {
     if (!isEditing || !currentUser || username === currentUser.username) {
@@ -79,11 +89,8 @@ const ProfilePage: React.FC = () => {
   const handlePhotoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setProfilePhoto(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      setProfilePhotoFile(file);
+      setProfilePhotoPreview(URL.createObjectURL(file));
     }
   };
 
@@ -103,12 +110,11 @@ const ProfilePage: React.FC = () => {
     
     try {
         await updateUser({
-            ...currentUser,
             fullName: trimmedFullName,
             username: username,
-            profilePhoto,
-        });
+        }, profilePhotoFile);
         setIsEditing(false);
+        setProfilePhotoFile(null);
     } catch (err: any) {
         setError(err.message || "Failed to update profile.");
     }
@@ -116,18 +122,17 @@ const ProfilePage: React.FC = () => {
   
   const handleCancel = () => {
     // Reset fields to original state
-    setFullName(currentUser.fullName);
-    setUsername(currentUser.username);
-    setProfilePhoto(currentUser.profilePhoto);
+    setProfilePhotoFile(null);
     setError('');
     setUsernameStatus(null);
     setIsEditing(false);
   };
 
   const renderProfileImage = () => {
-    if (profilePhoto) {
+    const photoSrc = isEditing ? profilePhotoPreview : currentUser.profilePhoto;
+    if (photoSrc) {
         return <img
-              src={profilePhoto}
+              src={photoSrc}
               alt="Profile"
               className="rounded-full w-full h-full object-cover border-4 border-indigo-200 dark:border-indigo-700"
             />

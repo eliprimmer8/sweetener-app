@@ -1,284 +1,258 @@
 import { User, Post } from '../utils/users';
+import { createClient } from '@supabase/supabase-js';
 
-const USERS_KEY = 'users_v2';
-const POSTS_KEY = 'posts_v2';
-const SIMULATED_DELAY = 600; // ms
+// It's safe to use non-null assertions here because we expect these
+// to be set in the deployment environment (e.g., Netlify).
+const supabaseUrl = process.env.SUPABASE_URL!;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY!;
 
-// --- Seeding ---
-const seedInitialData = () => {
-    const initialUsers: User[] = [
-        {
-            id: '1',
-            fullName: 'Ryan Admin',
-            username: 'ryan',
-            email: 'ryan@sweetener.social',
-            password: 'password123',
-            profilePhoto: '',
-            following: [],
-            followers: [],
-            isVerified: true
-        }
-    ];
-    saveUsersToStorage(initialUsers);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+const MEDIA_BUCKET = 'public-media';
+
+// --- Auth API ---
+
+export const apiLogin = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
 };
 
-
-// --- Internal Helper Functions ---
-
-export const getUsers = (): User[] => {
-  try {
-    const usersJson = localStorage.getItem(USERS_KEY);
-    if (!usersJson) {
-        seedInitialData();
-        return getUsers();
-    }
-    return usersJson ? JSON.parse(usersJson) : [];
-  } catch (error) {
-    console.error("Failed to parse users from localStorage", error);
-    return [];
-  }
-};
-
-const saveUsersToStorage = (users: User[]): void => {
-  try {
-    localStorage.setItem(USERS_KEY, JSON.stringify(users));
-  } catch (error) {
-    console.error("Failed to save users to localStorage", error);
-  }
-};
-
-const getPosts = (): Post[] => {
-  try {
-    const postsJson = localStorage.getItem(POSTS_KEY);
-    return postsJson ? JSON.parse(postsJson) : [];
-  } catch (error) {
-    console.error("Failed to parse posts from localStorage", error);
-    return [];
-  }
-};
-
-const savePostsToStorage = (posts: Post[]): void => {
-  try {
-    localStorage.setItem(POSTS_KEY, JSON.stringify(posts));
-  } catch (error) {
-    console.error("Failed to save posts to localStorage", error);
-  }
-};
-
-
-// --- Simulated API Functions ---
-
-const simulateApiCall = <T>(data: T, error?: string): Promise<T> => {
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      if (error) {
-        reject(new Error(error));
-      } else {
-        resolve(data);
-      }
-    }, SIMULATED_DELAY);
-  });
-};
-
-export const apiLogin = (identifier: string, password: string): Promise<User> => {
-  const users = getUsers();
-  const lowerCaseIdentifier = identifier.toLowerCase();
-  let user = users.find(u => 
-      ((u.email && u.email.toLowerCase() === lowerCaseIdentifier) || 
-       (u.username && u.username.toLowerCase() === lowerCaseIdentifier) ||
-       u.phone === identifier) && 
-      u.password === password
-  );
-
-  if (user) {
-    // Add isAdmin flag at runtime for the admin user
-    if (user.username === 'ryan') {
-        user = { ...user, isAdmin: true };
-    }
-    return simulateApiCall(user);
-  } else {
-    return simulateApiCall(user, 'Invalid credentials.');
-  }
-};
-
-export const apiSignup = (newUser: User): Promise<User> => {
-    const users = getUsers();
-    if (users.some(u => u.email && u.email.toLowerCase() === newUser.email.toLowerCase())) {
-      return simulateApiCall(newUser, 'An account with this email already exists.');
-    }
-    if (users.some(u => u.username && u.username.toLowerCase() === newUser.username.toLowerCase())) {
-        return simulateApiCall(newUser, 'This username is already taken.');
-    }
-    if (newUser.phone && users.some(u => u.phone === newUser.phone)) {
-      return simulateApiCall(newUser, 'An account with this phone number already exists.');
-    }
+export const apiSignup = async (data: { email: string, password: string, username: string, fullName: string, phone?: string }) => {
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: data.email,
+        password: data.password,
+    });
+    if (authError) throw authError;
+    if (!authData.user) throw new Error("Signup successful, but no user object returned.");
     
-    const userToSave = { ...newUser, isVerified: false };
-    users.push(userToSave);
-    saveUsersToStorage(users);
-    return simulateApiCall(userToSave);
-};
+    // Insert profile into 'profiles' table
+    const { error: profileError } = await supabase.from('profiles').insert({
+        id: authData.user.id,
+        email: data.email,
+        username: data.username,
+        full_name: data.fullName,
+        phone: data.phone,
+    });
 
-
-export const apiUpdateUser = (updatedUser: User): Promise<User> => {
-    const users = getUsers();
-    const userIndex = users.findIndex(u => u.id === updatedUser.id);
-    
-    if (userIndex !== -1) {
-        // Prevent non-admins from making themselves admin/verified
-        const existingUser = users[userIndex];
-        users[userIndex] = {
-            ...updatedUser,
-            isAdmin: existingUser.isAdmin,
-            isVerified: existingUser.isVerified,
-        };
-        saveUsersToStorage(users);
-        return simulateApiCall(users[userIndex]);
+    if (profileError) {
+        // Potentially delete the user if profile creation fails to avoid orphaned auth users
+        console.error("Failed to create user profile:", profileError);
+        throw profileError;
     }
-    return simulateApiCall(updatedUser, "User not found for update.");
+};
+
+export const apiLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+};
+
+export const apiRequestPasswordReset = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    if (error) throw error;
 };
 
 
-export const apiIsUsernameAvailable = (username: string): Promise<{ isAvailable: boolean }> => {
-    const users = getUsers();
-    const isAvailable = !users.some(user => user.username.toLowerCase() === username.toLowerCase());
-    return simulateApiCall({ isAvailable });
-};
+// --- User & Profile API ---
 
-
-export const apiFollowUser = (currentUserId: string, userIdToFollow: string): Promise<{ updatedCurrentUser: User }> => {
-    const users = getUsers();
-    const currentUserIndex = users.findIndex(u => u.id === currentUserId);
-    const userToFollowIndex = users.findIndex(u => u.id === userIdToFollow);
-
-    if (currentUserIndex > -1 && userToFollowIndex > -1) {
-      const currentUserData = users[currentUserIndex];
-      const userToFollowData = users[userToFollowIndex];
-
-      const isAlreadyFollowing = (currentUserData.following || []).includes(userIdToFollow);
-      
-      if (!isAlreadyFollowing) {
-        const updatedCurrentUser = { 
-          ...currentUserData,
-          following: [...(currentUserData.following || []), userIdToFollow]
-        };
-        const updatedUserToFollow = { 
-          ...userToFollowData,
-          followers: [...(userToFollowData.followers || []), currentUserId]
-        };
-
-        users[currentUserIndex] = updatedCurrentUser;
-        users[userToFollowIndex] = updatedUserToFollow;
-        
-        saveUsersToStorage(users);
-        return simulateApiCall({ updatedCurrentUser: users[currentUserIndex] });
-      }
-    }
-    return simulateApiCall({ updatedCurrentUser: users[currentUserIndex] }, "Follow operation failed.");
-};
-
-
-export const apiUnfollowUser = (currentUserId: string, userIdToUnfollow: string): Promise<{ updatedCurrentUser: User }> => {
-    const users = getUsers();
-    const currentUserIndex = users.findIndex(u => u.id === currentUserId);
-    const userToUnfollowIndex = users.findIndex(u => u.id === userIdToUnfollow);
-
-    if (currentUserIndex > -1 && userToUnfollowIndex > -1) {
-        const currentUserData = users[currentUserIndex];
-        const userToUnfollowData = users[userToUnfollowIndex];
-
-        const updatedCurrentUser = {
-          ...currentUserData,
-          following: (currentUserData.following || []).filter(id => id !== userIdToUnfollow)
-        };
-        const updatedUserToUnfollow = {
-          ...userToUnfollowData,
-          followers: (userToUnfollowData.followers || []).filter(id => id !== currentUserId)
-        };
-        
-        users[currentUserIndex] = updatedCurrentUser;
-        users[userToUnfollowIndex] = updatedUserToUnfollow;
-        
-        saveUsersToStorage(users);
-        return simulateApiCall({ updatedCurrentUser: users[currentUserIndex] });
-    }
-    return simulateApiCall({ updatedCurrentUser: users[currentUserIndex] }, "Unfollow operation failed.");
-};
-
-export const apiCreatePost = (post: Omit<Post, 'id' | 'createdAt'>): Promise<Post> => {
-    const posts = getPosts();
-    const newPost: Post = {
-        ...post,
-        id: Date.now().toString(),
-        createdAt: Date.now()
+const mapSupabaseProfileToUser = (profile: any): User => {
+    return {
+        id: profile.id,
+        fullName: profile.full_name,
+        username: profile.username,
+        email: profile.email,
+        phone: profile.phone,
+        profilePhoto: profile.profile_photo_url || '',
+        following: profile.following || [],
+        followers: profile.followers || [],
+        isAdmin: profile.is_admin,
+        isVerified: profile.is_verified,
     };
-    posts.unshift(newPost); // Add to the beginning for chronological order
-    savePostsToStorage(posts);
-    return simulateApiCall(newPost);
 };
 
-export const apiGetPostsForUser = (userId: string): Promise<Post[]> => {
-    const allPosts = getPosts();
-    const userPosts = allPosts.filter(post => post.userId === userId);
-    return simulateApiCall(userPosts);
+export const apiGetUserProfile = async (userId: string): Promise<User | null> => {
+    const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+    if (error) {
+        console.error('Error fetching user profile:', error);
+        return null;
+    }
+    return mapSupabaseProfileToUser(data);
 };
 
-export const apiGetFeedPosts = (userIds: string[]): Promise<Post[]> => {
-    const allPosts = getPosts();
-    const feedPosts = allPosts.filter(post => userIds.includes(post.userId));
-    // Already sorted by creation date as we unshift
-    return simulateApiCall(feedPosts);
+export const apiUpdateUser = async (userId: string, updates: Partial<User>, photoFile: File | null): Promise<User> => {
+    let photoUrl = null;
+    if (photoFile) {
+        const filePath = `avatars/${userId}/${Date.now()}_${photoFile.name}`;
+        const { error: uploadError } = await supabase.storage.from(MEDIA_BUCKET).upload(filePath, photoFile);
+        if (uploadError) throw uploadError;
+        
+        const { data: { publicUrl } } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(filePath);
+        photoUrl = publicUrl;
+    }
+
+    const updateData: { [key: string]: any } = {};
+    if (updates.fullName) updateData.full_name = updates.fullName;
+    if (updates.username) updateData.username = updates.username;
+    if (photoUrl) updateData.profile_photo_url = photoUrl;
+
+    if (Object.keys(updateData).length > 0) {
+        const { data, error } = await supabase.from('profiles').update(updateData).eq('id', userId).select().single();
+        if (error) throw error;
+        return mapSupabaseProfileToUser(data);
+    }
+    
+    const updatedProfile = await apiGetUserProfile(userId);
+    if (!updatedProfile) throw new Error("Failed to retrieve updated profile.");
+    return updatedProfile;
 };
 
-export const apiGetUsersByIds = (userIds: string[]): Promise<User[]> => {
-    const allUsers = getUsers();
-    const userMap = new Map<string, User>();
-    allUsers.forEach(user => userMap.set(user.id, user));
-    const foundUsers = userIds.map(id => userMap.get(id)).filter((u): u is User => !!u);
-    return simulateApiCall(foundUsers);
+export const apiIsUsernameAvailable = async (username: string): Promise<boolean> => {
+    const { data, error } = await supabase
+        .from('profiles')
+        .select('username')
+        .eq('username', username);
+    if (error) throw error;
+    return data.length === 0;
+};
+
+export const apiSearchUsers = async (query: string, currentUserId: string): Promise<User[]> => {
+    const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .or(`username.ilike.%${query}%,full_name.ilike.%${query}%`)
+        .neq('id', currentUserId) // Exclude current user
+        .limit(10);
+
+    if (error) {
+        console.error("Error searching users:", error);
+        return [];
+    }
+    return data.map(mapSupabaseProfileToUser);
+}
+
+
+// --- Social Graph API ---
+
+// This is a simplified implementation. A better approach for a large-scale app would be to use a separate 'follows' table.
+// For simplicity and to match the existing User model, we'll update the arrays directly.
+export const apiFollowUser = async (currentUserId: string, userIdToFollow: string) => {
+    // In a real DB, you'd use a transaction here.
+    // FIX: Correctly destructure error object and use unique names for error variables.
+    const { data: currentUserData, error } = await supabase.from('profiles').select('following').eq('id', currentUserId).single();
+    if (error) throw error;
+    const newFollowing = [...new Set([...(currentUserData.following || []), userIdToFollow])];
+    const { data: updatedCurrentUser, error: updateError } = await supabase.from('profiles').update({ following: newFollowing }).eq('id', currentUserId).select().single();
+    if (updateError) throw updateError;
+
+    const { data: targetUserData, error: targetError } = await supabase.from('profiles').select('followers').eq('id', userIdToFollow).single();
+    if (targetError) throw targetError;
+    const newFollowers = [...new Set([...(targetUserData.followers || []), currentUserId])];
+    const { data: updatedTargetUser, error: targetUpdateError } = await supabase.from('profiles').update({ followers: newFollowers }).eq('id', userIdToFollow).select().single();
+    if (targetUpdateError) throw targetUpdateError;
+
+    return { updatedCurrentUser: mapSupabaseProfileToUser(updatedCurrentUser), updatedTargetUser: mapSupabaseProfileToUser(updatedTargetUser) };
+};
+
+export const apiUnfollowUser = async (currentUserId: string, userIdToUnfollow: string) => {
+    // Transaction needed in real app
+    // FIX: Correctly destructure error object.
+    const { data: currentUserData, error } = await supabase.from('profiles').select('following').eq('id', currentUserId).single();
+    if (error) throw error;
+    const newFollowing = (currentUserData.following || []).filter((id: string) => id !== userIdToUnfollow);
+    const { data: updatedCurrentUser, error: updateError } = await supabase.from('profiles').update({ following: newFollowing }).eq('id', currentUserId).select().single();
+    if (updateError) throw updateError;
+    
+    const { data: targetUserData, error: targetError } = await supabase.from('profiles').select('followers').eq('id', userIdToUnfollow).single();
+    if (targetError) throw targetError;
+    const newFollowers = (targetUserData.followers || []).filter((id: string) => id !== currentUserId);
+    const { data: updatedTargetUser, error: targetUpdateError } = await supabase.from('profiles').update({ followers: newFollowers }).eq('id', userIdToUnfollow).select().single();
+    if (targetUpdateError) throw targetUpdateError;
+    
+    return { updatedCurrentUser: mapSupabaseProfileToUser(updatedCurrentUser), updatedTargetUser: mapSupabaseProfileToUser(updatedTargetUser) };
+};
+
+// --- Post API ---
+
+const mapSupabasePost = (post: any): Post => ({
+    id: post.id,
+    userId: post.user_id,
+    imageUrl: post.image_url,
+    caption: post.caption,
+    createdAt: new Date(post.created_at).getTime(),
+});
+
+export const apiCreatePost = async (userId: string, imageFile: File, caption: string): Promise<Post> => {
+    const filePath = `posts/${userId}/${Date.now()}_${imageFile.name}`;
+    const { error: uploadError } = await supabase.storage.from(MEDIA_BUCKET).upload(filePath, imageFile);
+    if (uploadError) throw uploadError;
+
+    const { data: { publicUrl } } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(filePath);
+    
+    const { data, error } = await supabase.from('posts').insert({
+        user_id: userId,
+        image_url: publicUrl,
+        caption: caption
+    }).select().single();
+
+    if (error) throw error;
+    return mapSupabasePost(data);
+};
+
+export const apiGetPostsForUser = async (userId: string): Promise<Post[]> => {
+    const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data.map(mapSupabasePost);
+};
+
+export const apiGetFeedPosts = async (followingIds: string[]): Promise<Post[]> => {
+    if (followingIds.length === 0) return [];
+    const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .in('user_id', followingIds)
+        .order('created_at', { ascending: false });
+        
+    if (error) throw error;
+    return data.map(mapSupabasePost);
+};
+
+export const apiGetUsersByIds = async (userIds: string[]): Promise<User[]> => {
+    if (userIds.length === 0) return [];
+    const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('id', userIds);
+    if (error) throw error;
+    return data.map(mapSupabaseProfileToUser);
 };
 
 
 // --- Admin Functions ---
 
-export const apiAdminUpdateUser = (adminId: string, targetUserId: string, updates: Partial<User>): Promise<User> => {
-    const users = getUsers();
-    const adminUser = users.find(u => u.id === adminId);
+export const apiAdminUpdateUser = async (targetUserId: string, updates: Partial<User>): Promise<User> => {
+    // RLS policies in Supabase should enforce admin privileges
+    const updateData: { [key: string]: any } = {};
+    if (updates.username) updateData.username = updates.username;
+    if (typeof updates.isVerified === 'boolean') updateData.is_verified = updates.isVerified;
 
-    if (!adminUser || adminUser.username !== 'ryan') {
-        return simulateApiCall(null, "Unauthorized: Only admins can perform this action.");
-    }
-    
-    const targetUserIndex = users.findIndex(u => u.id === targetUserId);
-
-    if (targetUserIndex !== -1) {
-        users[targetUserIndex] = { ...users[targetUserIndex], ...updates };
-        saveUsersToStorage(users);
-        return simulateApiCall(users[targetUserIndex]);
-    }
-    return simulateApiCall(null, "Target user not found.");
+    const { data, error } = await supabase.from('profiles').update(updateData).eq('id', targetUserId).select().single();
+    if (error) throw error;
+    return mapSupabaseProfileToUser(data);
 };
 
 
-export const apiAdminDeleteUser = (adminId: string, targetUserId: string): Promise<void> => {
-    const users = getUsers();
-    const adminUser = users.find(u => u.id === adminId);
-
-    if (!adminUser || adminUser.username !== 'ryan') {
-        return simulateApiCall(undefined, "Unauthorized: Only admins can perform this action.");
-    }
-
-    const updatedUsers = users.filter(u => u.id !== targetUserId);
-
-    if (users.length === updatedUsers.length) {
-         return simulateApiCall(undefined, "Target user not found.");
-    }
-
-    // Also delete user's posts
-    const posts = getPosts();
-    const updatedPosts = posts.filter(p => p.userId !== targetUserId);
-    savePostsToStorage(updatedPosts);
-    
-    saveUsersToStorage(updatedUsers);
-    return simulateApiCall(undefined);
+export const apiAdminDeleteUser = async (targetUserId: string): Promise<void> => {
+    // This should be an RPC function with transaction to delete posts, storage, etc.
+    // For client-side, we just delete the user profile. RLS should handle permissions.
+    const { error } = await supabase.from('profiles').delete().eq('id', targetUserId);
+    if (error) throw error;
+    // Note: This doesn't delete the user from auth.users, which requires service_role key.
 };

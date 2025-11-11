@@ -40,10 +40,14 @@ const UserProfilePage: React.FC<UserProfilePageProps> = ({ user, onBack }) => {
   const handleFollowToggle = async () => {
     setIsLoading(true);
     try {
+        let updatedTargetUser: User | void;
         if (isFollowing) {
-          await unfollowUser(profileUser.id);
+          updatedTargetUser = await unfollowUser(profileUser.id);
         } else {
-          await followUser(profileUser.id);
+          updatedTargetUser = await followUser(profileUser.id);
+        }
+        if (updatedTargetUser) {
+            setProfileUser(updatedTargetUser);
         }
     } catch (error) {
         console.error("Failed to toggle follow state", error);

@@ -49,13 +49,13 @@ const LoginPage: React.FC<LoginPageProps> = ({ onNavigateToSignUp, onNavigateToF
                 id="identifier"
                 name="identifier"
                 type="text"
-                autoComplete="username"
+                autoComplete="email"
                 required
                 className="appearance-none rounded-t-md relative block w-full px-10 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white"
-                placeholder="Email, phone, or username"
+                placeholder="Email"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
-                aria-label="Email, phone, or username"
+                aria-label="Email"
               />
             </div>
             <div className="relative">

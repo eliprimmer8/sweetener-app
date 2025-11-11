@@ -4,8 +4,7 @@ export interface User {
   username: string;
   email: string;
   phone?: string;
-  password: string; // In a real app, this would be a hash
-  profilePhoto: string; // base64 string or URL
+  profilePhoto: string; // URL
   following: string[];
   followers: string[];
   isAdmin?: boolean;
@@ -15,7 +14,7 @@ export interface User {
 export interface Post {
   id: string;
   userId: string;
-  imageUrl: string; // base64
+  imageUrl: string; // URL
   caption: string;
   createdAt: number; // timestamp
 }

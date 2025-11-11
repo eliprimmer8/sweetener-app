@@ -79,15 +79,11 @@ const SignUpPage: React.FC<SignUpPageProps> = ({ onNavigateToLogin }) => {
 
     try {
         await signup({
-            id: Date.now().toString(),
             fullName,
             username,
             email,
             phone,
             password,
-            profilePhoto: '',
-            following: [],
-            followers: [],
         });
         // On success, App component will redirect to profile
     } catch (err: any) {

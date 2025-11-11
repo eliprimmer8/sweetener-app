@@ -8,7 +8,8 @@ interface CreatePostPageProps {
 }
 
 const CreatePostPage: React.FC<CreatePostPageProps> = ({ onCancel, onPostSuccess }) => {
-    const [image, setImage] = useState<string | null>(null);
+    const [imageFile, setImageFile] = useState<File | null>(null);
+    const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [caption, setCaption] = useState('');
     const [error, setError] = useState('');
     const { createPost, loading } = useContext(UserContext);
@@ -17,30 +18,32 @@ const CreatePostPage: React.FC<CreatePostPageProps> = ({ onCancel, onPostSuccess
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setImage(reader.result as string);
-            };
-            reader.onerror = () => {
-                setError("Failed to read the image file.");
-            }
-            reader.readAsDataURL(file);
+            setImageFile(file);
+            setImagePreview(URL.createObjectURL(file));
         }
     };
 
     const handleSubmit = async () => {
-        if (!image) {
+        if (!imageFile) {
             setError('Please select an image to post.');
             return;
         }
         setError('');
         try {
-            await createPost(image, caption);
+            await createPost(imageFile, caption);
             onPostSuccess();
         } catch (err: any) {
             setError(err.message || 'Failed to create post.');
         }
     };
+    
+    const clearImage = () => {
+        setImageFile(null);
+        setImagePreview(null);
+        if(fileInputRef.current) {
+            fileInputRef.current.value = "";
+        }
+    }
 
     return (
         <div className="fixed inset-0 bg-white dark:bg-gray-900 z-50 flex flex-col">
@@ -51,7 +54,7 @@ const CreatePostPage: React.FC<CreatePostPageProps> = ({ onCancel, onPostSuccess
                 <h1 className="text-lg font-bold text-gray-900 dark:text-white">New Post</h1>
                 <button 
                     onClick={handleSubmit}
-                    disabled={!image || loading}
+                    disabled={!imageFile || loading}
                     className="font-bold text-indigo-600 dark:text-indigo-400 disabled:text-gray-400 dark:disabled:text-gray-500"
                 >
                     {loading ? 'Posting...' : 'Post'}
@@ -60,12 +63,12 @@ const CreatePostPage: React.FC<CreatePostPageProps> = ({ onCancel, onPostSuccess
             <main className="flex-grow p-4 overflow-y-auto">
                 <div className="space-y-4 max-w-lg mx-auto">
                     <div>
-                        {image ? (
+                        {imagePreview ? (
                             <div className="relative">
-                                <img src={image} alt="Preview" className="w-full h-auto rounded-lg" />
+                                <img src={imagePreview} alt="Preview" className="w-full h-auto rounded-lg" />
                                 <button
-                                    onClick={() => setImage(null)}
-                                    className="absolute top-2 right-2 bg-black/50 text-white rounded-full p-1.5"
+                                    onClick={clearImage}
+                                    className="absolute top-2 right-2 bg-black/50 text-white rounded-full p-1.5 leading-none text-xl"
                                     aria-label="Clear image"
                                 >
                                     &times;
